@@ -1,12 +1,9 @@
 #!/bin/bash
-#
-# 40_firstrun.sh
-#
 
 # Search for config files, if they don't exist, create the default ones
 if [ ! -d /config/conf ]; then
 	echo "Creating conf folder"
-	mkdir /config/conf
+	mkdir -p /config/conf
 else
 	echo "Using existing conf folder"
 fi
@@ -17,17 +14,6 @@ if [ -f /root/zm.conf ]; then
 	cp /etc/zm/conf.d/README /config/conf/README
 else
 	echo "File zm.conf already moved"
-fi
-
-# Get the latest ES bundle
-cd /root
-rm -rf zmeventnotification
-wget -q https://github.com/nmeylan/zoneminder/raw/master/zmeventnotification/EventServer.tgz
-if [ -f EventServer.tgz ]; then
-	tar -xf EventServer.tgz
-	rm EventServer.tgz
-else
-	echo "Error: Cannot download the ES server bundle"
 fi
 
 # Handle the zmeventnotification.ini file
@@ -298,11 +284,6 @@ else
 	fi
 fi
 
-# set user crontab entries
-crontab -r -u root
-if [ -f /config/cron ]; then
-	crontab -l -u root | cat - /config/cron | crontab -u root -
-fi
 
 # Symbolink for /config/zmeventnotification.ini
 ln -sf /config/zmeventnotification.ini /etc/zm/zmeventnotification.ini
@@ -311,36 +292,10 @@ chown www-data:www-data /etc/zm/zmeventnotification.ini
 # Symbolink for /config/secrets.ini
 ln -sf /config/secrets.ini /etc/zm/
 
-# Fix memory issue
-echo "Setting shared memory to : $SHMEM of `awk '/MemTotal/ {print $2}' /proc/meminfo` bytes"
-umount /dev/shm
-mount -t tmpfs -o rw,nosuid,nodev,noexec,relatime,size=${SHMEM} tmpfs /dev/shm
-
 # Set multi-ports in apache2 for ES.
 # Start with default configuration.
 cp /etc/apache2/ports.conf.default /etc/apache2/ports.conf
 cp /etc/apache2/sites-enabled/default-ssl.conf.default /etc/apache2/sites-enabled/default-ssl.conf
-
-if [ $((MULTI_PORT_START)) -gt 0 ] && [ $((MULTI_PORT_END)) -gt $((MULTI_PORT_START)) ]; then
-
-	echo "Setting ES multi-port range from ${MULTI_PORT_START} to ${MULTI_PORT_END}."
-
-	ORIG_VHOST="_default_:443"
-
-	NEW_VHOST=${ORIG_VHOST}
-	PORT=${MULTI_PORT_START}
-	while [[ ${PORT} -le ${MULTI_PORT_END} ]]; do
-	    egrep -sq "Listen ${PORT}" /etc/apache2/ports.conf || echo "Listen ${PORT}" >> /etc/apache2/ports.conf
-	    NEW_VHOST="${NEW_VHOST} _default_:${PORT}"
-	    PORT=$(($PORT + 1))
-	done
-
-	perl -pi -e "s/${ORIG_VHOST}/${NEW_VHOST}/ if (/<VirtualHost/);" /etc/apache2/sites-enabled/default-ssl.conf
-else
-	if [ $((MULTI_PORT_START)) -ne 0 ];then
-		echo "Multi-port error start ${MULTI_PORT_START}, end ${MULTI_PORT_END}."
-	fi
-fi
 
 # Install hook packages, if enabled
 if [ "$INSTALL_HOOK" == "1" ]; then
@@ -487,13 +442,3 @@ if [ "$INSTALL_HOOK" == "1" ]; then
 
 	mv /root/zmeventnotification/setup.py /root/setup.py
 fi
-
-echo "Starting services..."
-service mysql start
-
-# Update the database if necessary
-zmupdate.pl -nointeractive
-zmupdate.pl -f
-
-service apache2 start
-service zoneminder start

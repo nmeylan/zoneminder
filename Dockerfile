@@ -1,6 +1,6 @@
 FROM phusion/baseimage:bionic-1.0.0
 
-LABEL maintainer="dlandon"
+LABEL maintainer="nmeylan"
 
 ENV	DEBCONF_NONINTERACTIVE_SEEN="true" \
 	DEBIAN_FRONTEND="noninteractive" \
@@ -18,9 +18,18 @@ ENV	PHP_VERS="7.4" \
 	PUID="99" \
 	PGID="100"
 
+ENV INSTALL_HOOK=1 \
+    INSTALL_FACE=1 \
+    INSTALL_TINY_YOLO=0 \
+    INSTALL_YOLO=1
+
 COPY init/ /etc/my_init.d/
 COPY defaults/ /root/
+COPY build/ /root/build/
+COPY zmeventnotification/zmeventnotification /root/zmeventnotification
 
+RUN ls -l /root
+RUN apt-get update && apt-get -y upgrade -o Dpkg::Options::="--force-confold" && apt-get -y autoremove
 RUN	add-apt-repository -y ppa:iconnor/zoneminder-$ZM_VERS && \
 	add-apt-repository ppa:ondrej/php && \
 	apt-get update && \
@@ -33,7 +42,7 @@ RUN	add-apt-repository -y ppa:iconnor/zoneminder-$ZM_VERS && \
 	apt-get -y install --no-install-recommends libvlc-dev libvlccore-dev vlc
 
 RUN	apt-get -y install zoneminder
-	
+
 RUN	rm /etc/mysql/my.cnf && \
 	cp /etc/mysql/mariadb.conf.d/50-server.cnf /etc/mysql/my.cnf && \
 	adduser www-data video && \
@@ -84,6 +93,8 @@ RUN	apt-get -y remove make && \
 	apt-get -y autoremove && \
 	rm -rf /tmp/* /var/tmp/* && \
 	chmod +x /etc/my_init.d/*.sh
+
+RUN chmod +x /root/build/*.sh && /root/build/zmeventnotification.sh
 
 VOLUME \
 	["/config"] \
