@@ -22,7 +22,7 @@ fi
 # Get the latest ES bundle
 cd /root
 rm -rf zmeventnotification
-wget -q https://github.com/dlandon/zoneminder/raw/master/zmeventnotification/EventServer.tgz
+wget -q https://github.com/nmeylan/zoneminder/raw/master/zmeventnotification/EventServer.tgz
 if [ -f EventServer.tgz ]; then
 	tar -xf EventServer.tgz
 	rm EventServer.tgz
@@ -166,7 +166,7 @@ rm -rf /var/lib/zmeventnotification/push/tokens.txt
 ln -sf /config/push/tokens.txt /var/lib/zmeventnotification/push/tokens.txt
 
 # ssmtp
-rm -r /etc/ssmtp 
+rm -r /etc/ssmtp
 ln -s /config/ssmtp /etc/ssmtp
 
 # mysql

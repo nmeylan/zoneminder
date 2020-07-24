@@ -64,7 +64,7 @@ if ( !try_use('JSON') ) {
 #
 # ==========================================================================
 
-my $app_version = '5.15-Docker';
+my $app_version = '5.15';
 
 # ==========================================================================
 #
@@ -81,6 +81,7 @@ my $app_version = '5.15-Docker';
 use constant {
   DEFAULT_CONFIG_FILE        => '/etc/zm/zmeventnotification.ini',
   DEFAULT_PORT               => 9000,
+  DEFAULT_ADDRESS            => '[::]',
   DEFAULT_AUTH_ENABLE        => 'yes',
   DEFAULT_AUTH_TIMEOUT       => 20,
   DEFAULT_FCM_ENABLE         => 'yes',
@@ -166,6 +167,7 @@ my $escontrol_interface_password;
 my $escontrol_interface_file;
 
 my $port;
+my $address;
 
 my $auth_enabled;
 my $auth_timeout;
@@ -175,6 +177,10 @@ my $mqtt_server;
 my $mqtt_topic;
 my $mqtt_username;
 my $mqtt_password;
+my $mqtt_tls_ca;
+my $mqtt_tls_cert;
+my $mqtt_tls_key;
+my $mqtt_tls_insecure;
 my $mqtt_tick_interval;
 my $mqtt_retain;
 my $mqtt_last_tick_time = time();
@@ -446,6 +452,7 @@ sub loadEsConfigSettings {
     DEFAULT_BASE_DATA_PATH );
 
   $port    = config_get_val( $config, 'network', 'port',    DEFAULT_PORT );
+  $address = config_get_val( $config, 'network', 'address', DEFAULT_ADDRESS );
   $auth_enabled =
     config_get_val( $config, 'auth', 'enable', DEFAULT_AUTH_ENABLE );
   $auth_timeout =
@@ -457,6 +464,10 @@ sub loadEsConfigSettings {
     config_get_val( $config, 'mqtt', 'topic', DEFAULT_MQTT_TOPIC );
   $mqtt_username = config_get_val( $config, 'mqtt', 'username' );
   $mqtt_password = config_get_val( $config, 'mqtt', 'password' );
+  $mqtt_tls_ca = config_get_val( $config, 'mqtt', 'tls_ca' );
+  $mqtt_tls_cert = config_get_val( $config, 'mqtt', 'tls_cert' );
+  $mqtt_tls_key = config_get_val( $config, 'mqtt', 'tls_key' );
+  $mqtt_tls_insecure = config_get_val( $config, 'mqtt', 'tls_insecure' );
   $mqtt_tick_interval =
     config_get_val( $config, 'mqtt', 'tick_interval',
     DEFAULT_MQTT_TICK_INTERVAL );
@@ -613,6 +624,7 @@ Admin interface password.............. ${\(present_or_not($escontrol_interface_p
 Admin interface persistence file ..... ${\(value_or_undefined($escontrol_interface_file))}
 
 Port ................................. ${\(value_or_undefined($port))}
+Address .............................. ${\(value_or_undefined($address))}
 Event check interval ................. ${\(value_or_undefined($event_check_interval))}
 Monitor reload interval .............. ${\(value_or_undefined($monitor_reload_interval))}
 Skipped monitors...................... ${\(value_or_undefined($skip_monitors))}
@@ -635,6 +647,10 @@ MQTT Username ........................ ${\(value_or_undefined($mqtt_username))}
 MQTT Password ........................ ${\(present_or_not($mqtt_password))}
 MQTT Retain .......................... ${\(yes_or_no($mqtt_retain))}
 MQTT Tick Interval ................... ${\(value_or_undefined($mqtt_tick_interval))}
+MQTT TLS CA ........................ ${\(value_or_undefined($mqtt_tls_ca))}
+MQTT TLS Cert ........................ ${\(value_or_undefined($mqtt_tls_cert))}
+MQTT TLS Key ........................ ${\(value_or_undefined($mqtt_tls_key))}
+MQTT TLS Insecure ........................ ${\(yes_or_no($mqtt_tls_insecure))}
 
 SSL enabled .......................... ${\(yes_or_no($ssl_enabled))}
 SSL cert file ........................ ${\(value_or_undefined($ssl_cert_file))}
@@ -705,6 +721,10 @@ if ($use_api_push) {
 if ($use_mqtt) {
   if ( !try_use('Net::MQTT::Simple') ) {
     Fatal('Net::MQTT::Simple  missing');
+    exit(-1);
+  }
+  if (defined $mqtt_tls_ca && !try_use('Net::MQTT::Simple::SSL') ) {
+    Fatal('Net::MQTT::Simple:SSL  missing');
     exit(-1);
   }
   printInfo('MQTT Enabled');
@@ -1240,13 +1260,13 @@ sub checkNewEvents() {
           . $_->{pushstate},1 );
       $ndx++;
     }
-    
+
     foreach my $monitor ( values(%monitors) ) {
       zmMemInvalidate($monitor);
     }
     loadMonitors();
   }
-  
+
   # loop through all monitors getting SHM state
   foreach my $monitor ( values(%monitors) ) {
     my $alarm_cause = '';
@@ -1281,8 +1301,8 @@ sub checkNewEvents() {
     # Alert only happens after alarm. The state before alarm
     # is STATE_PRE_ALERT. This is needed to catch alarms
     # that occur in < polling time of ES and then moves to ALERT
-    if ( $state == STATE_ALARM || $state == STATE_ALERT ) {  
-   
+    if ( $state == STATE_ALARM || $state == STATE_ALERT ) {
+
       if  (!$active_events{$mid}->{$current_event}) {
 
         if ($active_events{$mid}->{last_event_processed} >= $current_event) {
@@ -1290,12 +1310,12 @@ sub checkNewEvents() {
           next;
 
         }
-         
-         
-       
+
+
+
         # this means we haven't previously worked on this alarm
         # so create an event start object for this monitor
-        
+
         $eventFound++;
 
         # First we need to close any other open events for this monitor
@@ -1397,9 +1417,9 @@ sub loadMonitors {
     }
     $monitors{ $monitor->{Id} } = $monitor;
     printDebug ("Loading ".$monitor->{Name},1);
-    
+
   }    # end while fetchrow
-  
+
 
   populateEsControlNotification();
   saveEsControlSettings();
@@ -1441,7 +1461,7 @@ sub getNotesFromEventDB {
     or Fatal( "getNotesFromEventDB: Can't execute: " . $sth->errstr() );
   my $notes = $sth->fetchrow_hashref();
   $sth->finish();
-  
+
   return $notes->{Notes};
 }
 
@@ -2471,22 +2491,42 @@ sub loadPredefinedConnections {
 sub initMQTT {
   my $mqtt_connection;
 
-  printInfo('Initializing MQTT connection...');
-
 # Note this does not actually connect to the MQTT server. That happens later during publish
   if ( defined $mqtt_username && defined $mqtt_password ) {
-    if ( $mqtt_connection = Net::MQTT::Simple->new($mqtt_server) ) {
-
+    if ( defined $mqtt_tls_ca ) {
+      printInfo('Initializing MQTT with auth over TLS connection...');
+      use IO::Socket::SSL qw(SSL_VERIFY_NONE);
+      my $sockopts = {SSL_ca_file => $mqtt_tls_ca};
+      if ( defined $mqtt_tls_cert && defined $mqtt_tls_key ) {
+        $sockopts->{SSL_cert_file} = $mqtt_tls_cert;
+        $sockopts->{SSL_key_file} = $mqtt_tls_key;
+      } else {
+        printDebug('MQTT over TLS will be one way TLS as tls_cert and tls_key are not provided.',1);
+      }
+      if (defined $mqtt_tls_insecure && $mqtt_tls_insecure eq 1) {
+        $sockopts->{SSL_verify_mode} = SSL_VERIFY_NONE;
+      }
+      $mqtt_connection = Net::MQTT::Simple::SSL->new($mqtt_server, $sockopts);
+    } else {
+      printInfo('Initializing MQTT with auth connection...');
+      $mqtt_connection = Net::MQTT::Simple->new($mqtt_server);
+    }
+    if ( $mqtt_connection ) {
       # Setting up allow insecure connections
       $ENV{MQTT_SIMPLE_ALLOW_INSECURE_LOGIN} = 'true';
 
       $mqtt_connection->login( $mqtt_username, $mqtt_password );
       printDebug('Intialized MQTT with auth',1);
+    } else {
+      printError('Failed to Intialized MQTT with auth',1);
     }
   }
   else {
+      printInfo('Initializing MQTT without auth connection...');
     if ( $mqtt_connection = Net::MQTT::Simple->new($mqtt_server) ) {
       printDebug('Intialized MQTT without auth',1);
+    } else {
+      printError('Failed to Intialized MQTT without auth',1);
     }
   }
 
@@ -3085,8 +3125,8 @@ sub processNewAlarmsInFork {
             printDebug ("invoking user start notification script $user_cmd",1);
             my $user_res = `$user_cmd`;
           } # user notify script
-          
-          
+
+
 
           if ( $use_hook_description && $hookResult == 0 ) {
 
@@ -3408,7 +3448,7 @@ sub processNewAlarmsInFork {
            } else {
             printDebug ("Skipping FCM notification as Monitor:".$temp_alarm_obj->{Name}."(".$temp_alarm_obj->{MonitorId}.") is excluded from zmNinja monitor list",1);
           }
-          
+
         }    # foreach active_connections
       }
 
@@ -3494,6 +3534,7 @@ sub initSocketServer {
       $ssl_server = IO::Socket::SSL->new(
         Listen        => 10,
         LocalPort     => $port,
+        LocalAddr     => $address,
         Proto         => 'tcp',
         Reuse         => 1,
         ReuseAddr     => 1,
