@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # Search for config files, if they don't exist, create the default ones
 if [ ! -d /config/conf ]; then
 	echo "Creating conf folder"
@@ -312,7 +311,7 @@ if [ "$INSTALL_HOOK" == "1" ]; then
 
 		# Python modules needed for hook processing
 		apt-get -y install python3-pip cmake
-
+                pip3 install --upgrade pip
 		# pip3 will take care of installing dependent packages
 		pip3 install future
 		pip3 install /root/zmeventnotification

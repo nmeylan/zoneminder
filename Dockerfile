@@ -25,7 +25,6 @@ ENV INSTALL_HOOK=1 \
 
 COPY init/ /etc/my_init.d/
 COPY defaults/ /root/
-COPY build/ /root/build/
 COPY zmeventnotification/zmeventnotification /root/zmeventnotification
 
 RUN ls -l /root
@@ -88,13 +87,15 @@ RUN	systemd-tmpfiles --create zoneminder.conf && \
 	cp /etc/apache2/ports.conf /etc/apache2/ports.conf.default && \
 	cp /etc/apache2/sites-enabled/default-ssl.conf /etc/apache2/sites-enabled/default-ssl.conf.default
 
+COPY build/ /root/build/
+RUN chmod +x /root/build/*.sh && /root/build/zmeventnotification.sh
+
 RUN	apt-get -y remove make && \
 	apt-get -y clean && \
 	apt-get -y autoremove && \
 	rm -rf /tmp/* /var/tmp/* && \
 	chmod +x /etc/my_init.d/*.sh
 
-RUN chmod +x /root/build/*.sh && /root/build/zmeventnotification.sh
 
 VOLUME \
 	["/config"] \
